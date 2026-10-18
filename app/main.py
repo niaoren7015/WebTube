@@ -41,7 +41,8 @@ class UrlRequest(BaseModel):
 
 class DownloadRequest(BaseModel):
     url: str = Field(min_length=8, max_length=2048)
-    format_id: str | None = Field(default=None, max_length=40)
+    format_id: str | None = Field(default=None, max_length=40, pattern=r"^[A-Za-z0-9._-]{1,40}$")
+    format_has_audio: bool = False
     audio_only: bool = False
 
 def check_auth(x_app_token: str | None):
@@ -139,7 +140,7 @@ async def get_info(req: UrlRequest, x_app_token: str | None = Header(default=Non
         "formats": formats[:80],
     }
 
-async def run_download(job_id: str, url: str, format_id: str | None, audio_only: bool):
+async def run_download(job_id: str, url: str, format_id: str | None, format_has_audio: bool, audio_only: bool):
     async with active_semaphore:
         job = jobs[job_id]
         job["status"] = "downloading"
@@ -167,7 +168,8 @@ async def run_download(job_id: str, url: str, format_id: str | None, audio_only:
                 "key": "FFmpegExtractAudio", "preferredcodec": "mp3", "preferredquality": "192"
             }]})
         elif format_id:
-            opts["format"] = f"{format_id}+bestaudio/best/{format_id}/best"
+            # Avoid appending a second audio stream when the selected format already has audio.
+            opts["format"] = f"{format_id}/best" if format_has_audio else f"{format_id}+bestaudio/best"
             opts["merge_output_format"] = "mp4"
         else:
             opts["format"] = "bestvideo*+bestaudio/best"
@@ -201,7 +203,7 @@ async def create_download(req: DownloadRequest, x_app_token: str | None = Header
         raise HTTPException(429, "下载队列已满，请稍后再试")
     job_id = uuid.uuid4().hex
     jobs[job_id] = {"id": job_id, "status": "queued", "progress": 0, "created_at": time.time()}
-    asyncio.create_task(run_download(job_id, url, req.format_id, req.audio_only))
+    asyncio.create_task(run_download(job_id, url, req.format_id, req.format_has_audio, req.audio_only))
     return {"id": job_id, "status": "queued"}
 
 @app.get("/api/downloads/{job_id}")
