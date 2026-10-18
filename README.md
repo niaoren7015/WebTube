@@ -9,6 +9,7 @@ A personal, self-hosted YouTube downloader UI built with FastAPI, yt-dlp and FFm
 - MP4 video download with FFmpeg merge; MP3 audio extraction.
 - Task status/progress, expiring downloads, automatic temporary-file cleanup.
 - Shared access token (`APP_SECRET`) and strict YouTube-host validation.
+- Optional temporary `cookies.txt` import for cases where YouTube rejects anonymous requests.
 - Docker image runs as a non-root user; GitHub Actions builds the image and runs media smoke checks.
 
 ## Deploy on Render (free tier, best-effort)
