@@ -6,17 +6,20 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PORT=8080
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    ffmpeg ca-certificates curl unzip \
+    ffmpeg ca-certificates curl unzip git libcairo2 libpango-1.0-0 libjpeg62-turbo libgif7 librsvg2-2 \
     && rm -rf /var/lib/apt/lists/* \
-    && curl -fsSL https://deno.land/install.sh | DENO_INSTALL=/usr/local sh
+    && curl -fsSL https://deno.land/install.sh | DENO_INSTALL=/usr/local sh \
+    && git clone --depth 1 --branch 2.0.2 https://github.com/Brainicism/bgutil-ytdlp-pot-provider.git /opt/bgutil-ytdlp-pot-provider \
+    && cd /opt/bgutil-ytdlp-pot-provider/server \
+    && deno install --allow-scripts=npm:canvas --frozen
 
 WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 COPY app ./app
-RUN mkdir -p /data/downloads && useradd -r -u 10001 appuser \
-    && chown -R appuser:appuser /app /data
+RUN mkdir -p /data/downloads /home/appuser && useradd -r -u 10001 -d /home/appuser -M appuser \
+    && chown -R appuser:appuser /app /data /home/appuser
 USER appuser
 
 EXPOSE 8080
