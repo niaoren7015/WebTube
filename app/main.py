@@ -1,9 +1,9 @@
 import asyncio
+import importlib.metadata
 import os
 import re
 import secrets
 import subprocess
-import tempfile
 import time
 import uuid
 from pathlib import Path
@@ -20,8 +20,6 @@ APP_SECRET = os.getenv("APP_SECRET", "")
 DOWNLOAD_DIR = Path(os.getenv("DOWNLOAD_DIR", "/data/downloads"))
 MAX_DOWNLOAD_MB = int(os.getenv("MAX_DOWNLOAD_MB", "800"))
 FILE_TTL_MINUTES = int(os.getenv("FILE_TTL_MINUTES", "60"))
-COOKIE_TTL_MINUTES = max(5, min(60, int(os.getenv("COOKIE_TTL_MINUTES", "30"))))
-MAX_COOKIE_BYTES = 512 * 1024
 MAX_ACTIVE_JOBS = max(1, min(4, int(os.getenv("MAX_ACTIVE_JOBS", "1"))))
 DOWNLOAD_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -34,7 +32,6 @@ app.add_middleware(
 )
 
 jobs: dict[str, dict[str, Any]] = {}
-cookie_sessions: dict[str, dict[str, Any]] = {}
 job_lock = asyncio.Lock()
 active_semaphore = asyncio.Semaphore(MAX_ACTIVE_JOBS)
 
@@ -42,17 +39,12 @@ ALLOWED_HOSTS = {"youtube.com", "www.youtube.com", "m.youtube.com", "youtu.be", 
 
 class UrlRequest(BaseModel):
     url: str = Field(min_length=8, max_length=2048)
-    cookie_session_id: str | None = Field(default=None, max_length=64)
-
-class CookieRequest(BaseModel):
-    cookie_text: str = Field(min_length=20, max_length=512 * 1024)
 
 class DownloadRequest(BaseModel):
     url: str = Field(min_length=8, max_length=2048)
     format_id: str | None = Field(default=None, max_length=40, pattern=r"^[A-Za-z0-9._-]{1,40}$")
     format_has_audio: bool = False
     audio_only: bool = False
-    cookie_session_id: str | None = Field(default=None, max_length=64)
 
 def check_auth(x_app_token: str | None):
     # Fail closed: never expose download actions when the service secret is missing.
@@ -61,52 +53,6 @@ def check_auth(x_app_token: str | None):
     if not secrets.compare_digest(x_app_token or "", APP_SECRET):
         raise HTTPException(status_code=401, detail="访问令牌无效。请在网页设置中配置服务端访问令牌。")
 
-
-def get_cookiefile(cookie_session_id: str | None) -> str | None:
-    if not cookie_session_id:
-        return None
-    session = cookie_sessions.get(cookie_session_id)
-    if not session or time.time() >= session["expires_at"]:
-        if session:
-            try:
-                Path(session["path"]).unlink(missing_ok=True)
-            except OSError:
-                pass
-            cookie_sessions.pop(cookie_session_id, None)
-        raise HTTPException(401, "Cookie 会话已过期或无效，请重新导入 Cookie 文件。")
-    path = Path(session["path"])
-    if not path.is_file():
-        cookie_sessions.pop(cookie_session_id, None)
-        raise HTTPException(401, "Cookie 文件已失效，请重新导入。")
-    return str(path)
-
-def write_cookie_session(cookie_text: str) -> dict[str, Any]:
-    if len(cookie_text.encode("utf-8")) > MAX_COOKIE_BYTES:
-        raise HTTPException(413, "Cookie 文件过大，最大支持 512 KB。")
-    if "\x00" in cookie_text:
-        raise HTTPException(400, "Cookie 文件格式无效。")
-    lines = [line for line in cookie_text.splitlines() if line.strip() and (not line.lstrip().startswith("#") or line.lstrip().startswith("#HttpOnly_"))]
-    if not any(len(fields := line.split("\t")) >= 7 and ("youtube.com" in fields[0].removeprefix("#HttpOnly_").lower() or "google.com" in fields[0].removeprefix("#HttpOnly_").lower()) for line in lines):
-        raise HTTPException(400, "未识别到 YouTube/Google Netscape 格式 Cookie。请导出 cookies.txt，而不是复制浏览器地址栏或普通文本。")
-    path = None
-    try:
-        with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", prefix="webtube-cookies-", suffix=".txt", dir=DOWNLOAD_DIR, delete=False) as f:
-            path = Path(f.name)
-            os.chmod(path, 0o600)
-            f.write("# Netscape HTTP Cookie File\n")
-            f.write(cookie_text)
-            if not cookie_text.endswith("\n"):
-                f.write("\n")
-        session_id = secrets.token_urlsafe(32)
-        cookie_sessions[session_id] = {"path": str(path), "expires_at": time.time() + COOKIE_TTL_MINUTES * 60}
-        return {"cookie_session_id": session_id, "expires_in_minutes": COOKIE_TTL_MINUTES}
-    except Exception:
-        if path:
-            try:
-                path.unlink(missing_ok=True)
-            except OSError:
-                pass
-        raise
 
 def validate_youtube_url(raw: str) -> str:
     try:
@@ -137,7 +83,10 @@ def ydl_opts_base():
         "extractor_retries": 2,
         "cachedir": False,
         "js_runtimes": {"deno": {}},
-      "extractor_args": {"youtube": {"player_client": ["web_safari", "android_vr", "web_embedded", "mweb"]}, "youtubepot-bgutilscript": {"server_home": ["/opt/bgutil-ytdlp-pot-provider/server"]}},
+        "extractor_args": {
+            "youtube": {"player_client": ["mweb", "tv", "web_safari", "android_vr", "web_embedded"]},
+            "youtubepot-bgutilscript": {"server_home": ["/opt/bgutil-ytdlp-pot-provider/server"]},
+        },
     }
 
 @app.get("/", response_class=HTMLResponse)
@@ -156,45 +105,51 @@ async def health():
         ffmpeg_ok = result.returncode == 0
     except Exception:
         ffmpeg_ok = False
+    try:
+        pot_provider_version = importlib.metadata.version("bgutil-ytdlp-pot-provider")
+    except importlib.metadata.PackageNotFoundError:
+        pot_provider_version = None
+    pot_script_home = Path("/opt/bgutil-ytdlp-pot-provider/server")
     return {
         "ok": True,
         "engine": "yt-dlp",
         "yt_dlp_version": yt_dlp.version.__version__,
         "ffmpeg_available": ffmpeg_ok,
+        "pot_provider_installed": pot_provider_version is not None,
+        "pot_provider_version": pot_provider_version,
+        "pot_script_home_available": pot_script_home.is_dir(),
+        "youtube_access": "not_checked_by_health_probe",
     }
 
-@app.post("/api/cookies")
-async def upload_cookies(req: CookieRequest, x_app_token: str | None = Header(default=None)):
-    check_auth(x_app_token)
-    result = write_cookie_session(req.cookie_text)
-    return {"ok": True, **result, "message": "Cookie 已临时载入。"}
+def explain_youtube_error(exc: Exception) -> str:
+    """Turn common upstream failures into actionable, non-misleading messages."""
+    raw = str(exc).strip()
+    low = raw.lower()
+    if "sign in to confirm you're not a bot" in low or "login_required" in low:
+        return ("YouTube 拒绝了当前服务器的匿名访问（LOGIN_REQUIRED）。PO Token 不能保证解除数据中心 IP 的登录验证；本服务当前不收集或上传账号 Cookie。原始错误：" + raw[:180])
+    if "http error 429" in low or "too many requests" in low:
+        return "YouTube 请求频率受限（HTTP 429），请稍后再试。原始错误：" + raw[:180]
+    if "http error 403" in low or "forbidden" in low:
+        return "YouTube 拒绝了媒体请求（HTTP 403）；可能涉及 PO Token、媒体链接有效期或出口 IP 限制。原始错误：" + raw[:180]
+    if "timed out" in low or "timeout" in low:
+        return "连接 YouTube 超时，请稍后重试。原始错误：" + raw[:180]
+    if "private video" in low or "video unavailable" in low:
+        return "视频不可公开访问、已删除或当前账号无权访问。原始错误：" + raw[:180]
+    return raw[:350] or exc.__class__.__name__
 
-@app.delete("/api/cookies/{cookie_session_id}")
-async def delete_cookies(cookie_session_id: str, x_app_token: str | None = Header(default=None)):
-    check_auth(x_app_token)
-    session = cookie_sessions.pop(cookie_session_id, None)
-    if session:
-        try:
-            Path(session["path"]).unlink(missing_ok=True)
-        except OSError:
-            pass
-    return {"ok": True, "message": "本次 Cookie 会话已清理。"}
 
 @app.post("/api/info")
 async def get_info(req: UrlRequest, x_app_token: str | None = Header(default=None)):
     check_auth(x_app_token)
     url = validate_youtube_url(req.url)
-    cookiefile = get_cookiefile(req.cookie_session_id)
     opts = ydl_opts_base()
-    if cookiefile:
-        opts["cookiefile"] = cookiefile
     try:
         def extract():
             with yt_dlp.YoutubeDL(opts) as ydl:
                 return ydl.extract_info(url, download=False)
         info = await asyncio.to_thread(extract)
     except Exception as e:
-        raise HTTPException(502, f"无法获取视频信息：{str(e)[:350]}")
+        raise HTTPException(502, f"无法获取视频信息：{explain_youtube_error(e)}")
     formats = []
     for f in (info.get("formats") or []):
         if not f.get("url"):
@@ -218,7 +173,7 @@ async def get_info(req: UrlRequest, x_app_token: str | None = Header(default=Non
         "formats": formats[:80],
     }
 
-async def run_download(job_id: str, url: str, format_id: str | None, format_has_audio: bool, audio_only: bool, cookie_session_id: str | None):
+async def run_download(job_id: str, url: str, format_id: str | None, format_has_audio: bool, audio_only: bool):
     async with active_semaphore:
         job = jobs[job_id]
         job["status"] = "downloading"
@@ -253,9 +208,6 @@ async def run_download(job_id: str, url: str, format_id: str | None, format_has_
             opts["format"] = "bestvideo*+bestaudio/best"
             opts["merge_output_format"] = "mp4"
         try:
-            cookiefile = get_cookiefile(cookie_session_id)
-            if cookiefile:
-                opts["cookiefile"] = cookiefile
             def do_download():
                 with yt_dlp.YoutubeDL(opts) as ydl:
                     ydl.download([url])
@@ -272,7 +224,7 @@ async def run_download(job_id: str, url: str, format_id: str | None, format_has_
                     p.unlink()
                 except OSError:
                     pass
-            job.update({"status": "failed", "error": str(e)[:500]})
+            job.update({"status": "failed", "error": explain_youtube_error(e)})
         finally:
             job["finished_at"] = time.time()
 
@@ -284,8 +236,7 @@ async def create_download(req: DownloadRequest, x_app_token: str | None = Header
         raise HTTPException(429, "下载队列已满，请稍后再试")
     job_id = uuid.uuid4().hex
     jobs[job_id] = {"id": job_id, "status": "queued", "progress": 0, "created_at": time.time()}
-    get_cookiefile(req.cookie_session_id)
-    asyncio.create_task(run_download(job_id, url, req.format_id, req.format_has_audio, req.audio_only, req.cookie_session_id))
+    asyncio.create_task(run_download(job_id, url, req.format_id, req.format_has_audio, req.audio_only))
     return {"id": job_id, "status": "queued"}
 
 @app.get("/api/downloads/{job_id}")
@@ -324,13 +275,6 @@ async def cleanup_loop():
                     p.unlink()
             except OSError:
                 pass
-        for session_id, session in list(cookie_sessions.items()):
-            if now >= session.get("expires_at", 0):
-                try:
-                    Path(session["path"]).unlink(missing_ok=True)
-                except OSError:
-                    pass
-                cookie_sessions.pop(session_id, None)
         for job_id, job in list(jobs.items()):
             if job.get("finished_at") and now - job["finished_at"] > max(FILE_TTL_MINUTES * 60, 3600):
                 jobs.pop(job_id, None)
