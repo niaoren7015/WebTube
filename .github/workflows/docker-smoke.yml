@@ -50,12 +50,22 @@ jobs:
         run: |
           docker run --rm --entrypoint sh webtube:ci -ec '
             mkdir -p /tmp/webtube-test
-            yt-dlp --verbose --no-playlist --socket-timeout 15 --retries 1 --extractor-retries 1 \
-              --extractor-args "youtube:player_client=web_safari,android_vr,web_embedded,mweb" \
-              --extractor-args "youtubepot-bgutilscript:server_home=/opt/bgutil-ytdlp-pot-provider/server" \
-              -f "worst[ext=mp4]/worst" --max-filesize 20M \
-              -o "/tmp/webtube-test/test.%(ext)s" \
-              "https://www.youtube.com/watch?v=aqz-KE-bpKQ"
-            test "$(find /tmp/webtube-test -type f | wc -l)" -ge 1
+            success=0
+            for client in tv tv_embedded android_vr web_safari web_embedded mweb; do
+              echo "===== Trying anonymous client: $client ====="
+              if yt-dlp --verbose --no-playlist --socket-timeout 12 --retries 0 --extractor-retries 0 \
+                --extractor-args "youtube:player_client=$client" \
+                --extractor-args "youtubepot-bgutilscript:server_home=/opt/bgutil-ytdlp-pot-provider/server" \
+                -f "worst[ext=mp4]/worst" --max-filesize 20M \
+                -o "/tmp/webtube-test/$client.%(ext)s" \
+                "https://www.youtube.com/watch?v=aqz-KE-bpKQ"; then
+                if find /tmp/webtube-test -type f -size +0c | grep -q .; then
+                  echo "SUCCESS: anonymous client $client downloaded media"
+                  success=1
+                  break
+                fi
+              fi
+            done
             find /tmp/webtube-test -type f -printf "%f %s bytes\n"
+            test "$success" -eq 1
           '
