@@ -64,6 +64,11 @@ jobs:
               "https://www.youtube.com/watch?v=aqz-KE-bpKQ" || true
           '
 
+      - name: Test YouTube.js alternate parser (diagnostic only)
+        continue-on-error: true
+        run: |
+          docker run --rm --entrypoint deno webtube:ci eval --allow-all 'import { Innertube } from "npm:youtubei.js"; const yt = await Innertube.create(); const info = await yt.getBasicInfo("aqz-KE-bpKQ"); console.log("YTJS_TITLE", info.basic_info?.title ?? "missing"); const format = await yt.getStreamingData("aqz-KE-bpKQ", { type: "video+audio", quality: "360p" }); console.log("YTJS_STREAM_URL_AVAILABLE", Boolean(format.url)); if (!format.url) throw new Error("YouTube.js returned no media URL"); const response = await fetch(format.url, { headers: { Range: "bytes=0-65535" } }); const reader = response.body?.getReader(); const first = reader ? await reader.read() : { value: null }; if (reader) await reader.cancel(); console.log("YTJS_MEDIA_HTTP_STATUS", response.status, "FIRST_CHUNK_BYTES", first.value?.byteLength ?? 0); if (!response.ok || !first.value?.byteLength) Deno.exit(1);'
+
       - name: Real YouTube media download smoke test (anonymous)
         continue-on-error: true
         run: |
