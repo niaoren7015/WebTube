@@ -51,7 +51,7 @@ jobs:
           docker run --rm --entrypoint sh webtube:ci -ec '
             mkdir -p /tmp/webtube-test
             yt-dlp --no-playlist --socket-timeout 15 --retries 1 --extractor-retries 1 \
-              --extractor-args "youtube:player_client=android_vr,web_embedded" \
+              --extractor-args "youtubepot-bgutilscript:server_home=/opt/bgutil-ytdlp-pot-provider/server" \
               -f "worst[ext=mp4]/worst" --max-filesize 20M \
               -o "/tmp/webtube-test/test.%(ext)s" \
               "https://www.youtube.com/watch?v=aqz-KE-bpKQ"
