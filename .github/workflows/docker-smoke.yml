@@ -44,7 +44,28 @@ jobs:
           assert d.get('ok') is True, d
           assert d.get('yt_dlp_version'), d
           assert d.get('ffmpeg_available') is True, d
+          assert d.get('pot_provider_installed') is True, d
+          assert d.get('pot_script_home_available') is True, d
           PY
+
+      - name: Compile Python and check URL/error handling
+        run: |
+          docker run --rm --entrypoint sh webtube:ci -ec '
+            python -m compileall -q app
+            python - <<'PY'
+          from fastapi import HTTPException
+          from app.main import explain_youtube_error, validate_youtube_url
+          assert validate_youtube_url("https://youtu.be/aqz-KE-bpKQ") == "https://www.youtube.com/watch?v=aqz-KE-bpKQ"
+          try:
+              validate_youtube_url("https://example.com/watch?v=aqz-KE-bpKQ")
+          except HTTPException as exc:
+              assert exc.status_code == 400
+          else:
+              raise AssertionError("non-YouTube URL was accepted")
+          assert "LOGIN_REQUIRED" in explain_youtube_error(Exception("Sign in to confirm you're not a bot"))
+          print("Python syntax, URL validation, and error classification passed")
+          PY
+          '
 
       - name: Verify PO Token provider is discoverable
         run: |
