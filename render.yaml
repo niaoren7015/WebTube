@@ -1,0 +1,16 @@
+services:
+  - type: web
+    name: webtube
+    runtime: docker
+    plan: free
+    autoDeploy: true
+    healthCheckPath: /api/health
+    envVars:
+      - key: APP_SECRET
+        sync: false
+      - key: MAX_ACTIVE_JOBS
+        value: "1"
+      - key: MAX_DOWNLOAD_MB
+        value: "250"
+      - key: FILE_TTL_MINUTES
+        value: "60"
