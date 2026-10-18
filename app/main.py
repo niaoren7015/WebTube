@@ -176,6 +176,9 @@ async def run_download(job_id: str, url: str, format_id: str | None, format_has_
             opts["format"] = "bestvideo*+bestaudio/best"
             opts["merge_output_format"] = "mp4"
         try:
+            cookiefile = get_cookiefile(cookie_session_id)
+            if cookiefile:
+                opts["cookiefile"] = cookiefile
             def do_download():
                 with yt_dlp.YoutubeDL(opts) as ydl:
                     ydl.download([url])
