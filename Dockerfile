@@ -6,8 +6,9 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PORT=8080
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    ffmpeg ca-certificates curl nodejs \
-    && rm -rf /var/lib/apt/lists/*
+    ffmpeg ca-certificates curl \
+    && rm -rf /var/lib/apt/lists/* \
+    && curl -fsSL https://deno.land/install.sh | DENO_INSTALL=/usr/local sh
 
 WORKDIR /app
 COPY requirements.txt .
