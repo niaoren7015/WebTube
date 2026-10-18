@@ -51,7 +51,7 @@ jobs:
       - name: Compile Python and check URL/error handling
         run: |
           docker run --rm --entrypoint python webtube:ci -m compileall -q app
-          docker run --rm --entrypoint python webtube:ci -c 'from app.main import explain_youtube_error, validate_youtube_url; assert validate_youtube_url("https://youtu.be/aqz-KE-bpKQ") == "https://www.youtube.com/watch?v=aqz-KE-bpKQ"; assert "LOGIN_REQUIRED" in explain_youtube_error(Exception("Sign in to confirm you are not a bot")); print("Python syntax, URL normalization, and error classification passed")'
+          docker run --rm --entrypoint python webtube:ci -c 'from app.main import explain_youtube_error, validate_youtube_url; assert validate_youtube_url("https://youtu.be/aqz-KE-bpKQ") == "https://www.youtube.com/watch?v=aqz-KE-bpKQ"; assert "LOGIN_REQUIRED" in explain_youtube_error(Exception("LOGIN_REQUIRED")); print("Python syntax, URL normalization, and error classification passed")'
 
       - name: Verify PO Token provider is discoverable
         run: |
