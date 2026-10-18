@@ -81,8 +81,7 @@ def ydl_opts_base():
         "extractor_retries": 2,
         "cachedir": False,
         "js_runtimes": {"deno": {}},
-      # Prefer public, non-cookie clients to avoid requiring user-supplied browser sessions.
-      "extractor_args": {"youtube": {"player_client": ["android_vr,web_embedded"]}},
+      "extractor_args": {"youtubepot-bgutilscript": {"server_home": ["/opt/bgutil-ytdlp-pot-provider/server"]}},
     }
 
 @app.get("/", response_class=HTMLResponse)
