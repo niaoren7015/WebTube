@@ -81,7 +81,7 @@ def ydl_opts_base():
         "extractor_retries": 2,
         "cachedir": False,
         "js_runtimes": {"deno": {}},
-      "extractor_args": {"youtube": {"player_client": ["mweb"]}, "youtubepot-bgutilscript": {"server_home": ["/opt/bgutil-ytdlp-pot-provider/server"]}},
+      "extractor_args": {"youtube": {"player_client": ["web_safari", "android_vr", "web_embedded", "mweb"]}, "youtubepot-bgutilscript": {"server_home": ["/opt/bgutil-ytdlp-pot-provider/server"]}},
     }
 
 @app.get("/", response_class=HTMLResponse)
