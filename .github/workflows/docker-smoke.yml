@@ -24,6 +24,7 @@ jobs:
         run: |
           docker run --rm --entrypoint sh webtube:ci -ec '
             yt-dlp --version
+            node --version
             ffmpeg -version | head -n 1
             python -c "import fastapi, yt_dlp; print(\"Python dependencies import OK\")"
           '
@@ -50,9 +51,9 @@ jobs:
           docker run --rm --entrypoint sh webtube:ci -ec '
             mkdir -p /tmp/webtube-test
             yt-dlp --no-playlist --socket-timeout 15 --retries 1 --extractor-retries 1 \
-              -f "worst[ext=mp4]/worst" --max-filesize 20M \
+              --js-runtimes node -f "worst[ext=mp4]/worst" --max-filesize 20M \
               -o "/tmp/webtube-test/test.%(ext)s" \
-              "https://www.youtube.com/watch?v=BaW_jenozKc"
+              "https://www.youtube.com/watch?v=aqz-KE-bpKQ"
             test "$(find /tmp/webtube-test -type f | wc -l)" -ge 1
             find /tmp/webtube-test -type f -printf "%f %s bytes\n"
           '
