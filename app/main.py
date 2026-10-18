@@ -79,7 +79,7 @@ def ydl_opts_base():
         "retries": 2,
         "extractor_retries": 2,
         "cachedir": False,
-        "js_runtimes": {"node": {}},
+        "js_runtimes": {"deno": {}},
     }
 
 @app.get("/", response_class=HTMLResponse)
