@@ -1,0 +1,58 @@
+name: Docker build and media smoke test
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  docker-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Build production image
+        run: docker build --pull -t webtube:ci .
+
+      - name: Verify yt-dlp and FFmpeg inside the image
+        run: |
+          docker run --rm --entrypoint sh webtube:ci -ec '
+            yt-dlp --version
+            ffmpeg -version | head -n 1
+            python -c "import fastapi, yt_dlp; print(\"Python dependencies import OK\")"
+          '
+
+      - name: Start application and check health endpoint
+        run: |
+          docker run -d --name webtube-ci -p 8080:8080 -e APP_SECRET=ci-only-test-secret webtube:ci
+          trap 'docker logs webtube-ci || true; docker rm -f webtube-ci || true' EXIT
+          for attempt in $(seq 1 30); do
+            if curl --fail --silent http://127.0.0.1:8080/api/health > health.json; then break; fi
+            sleep 2
+          done
+          cat health.json
+          python - <<'PY'
+          import json
+          d=json.load(open('health.json'))
+          assert d.get('ok') is True, d
+          assert d.get('yt_dlp_version'), d
+          assert d.get('ffmpeg_available') is True, d
+          PY
+
+      - name: Real YouTube metadata and media download smoke test
+        run: |
+          docker run --rm --entrypoint sh webtube:ci -ec '
+            mkdir -p /tmp/webtube-test
+            yt-dlp --no-playlist --socket-timeout 15 --retries 1 --extractor-retries 1 \
+              -f "worst[ext=mp4]/worst" --max-filesize 20M \
+              -o "/tmp/webtube-test/test.%(ext)s" \
+              "https://www.youtube.com/watch?v=BaW_jenozKc"
+            test "$(find /tmp/webtube-test -type f | wc -l)" -ge 1
+            find /tmp/webtube-test -type f -printf "%f %s bytes\n"
+          '
