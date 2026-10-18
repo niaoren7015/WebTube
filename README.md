@@ -9,7 +9,7 @@ A personal, self-hosted YouTube downloader UI built with FastAPI, yt-dlp and FFm
 - MP4 video download with FFmpeg merge; MP3 audio extraction.
 - Task status/progress, expiring downloads, automatic temporary-file cleanup.
 - Shared access token (`APP_SECRET`) and strict YouTube-host validation.
-- Optional temporary `cookies.txt` import for cases where YouTube rejects anonymous requests.
+- Anonymous-only operation: the service does not request, upload, or store account cookies.
 - Docker image runs as a non-root user; GitHub Actions builds the image and runs media smoke checks.
 
 ## Deploy on Render (free tier, best-effort)
@@ -19,15 +19,15 @@ A personal, self-hosted YouTube downloader UI built with FastAPI, yt-dlp and FFm
 3. Choose the free instance if available in your account/region.
 4. Add environment variable `APP_SECRET` with a long, unique random value (at least 32 random characters). Do not commit `.env` or secrets.
 5. Deploy. Render provides an `onrender.com` subdomain.
-6. Open `/api/health` and verify `ok`, `yt_dlp_version`, and `ffmpeg_available: true`.
-7. Check the GitHub Actions run. The `Real YouTube metadata and media download smoke test` must pass before calling the deployment tested.
+6. Open `/api/health` and verify `ok`, `yt_dlp_version`, `ffmpeg_available: true`, `pot_provider_installed: true`, and `pot_script_home_available: true`. This confirms the provider is installed, not that YouTube will accept requests.
+7. Check the GitHub Actions run. The anonymous real-media download test must pass before claiming the current environment can download YouTube media.
 
 ### Free-tier caveats
 
 - Render free services can sleep when idle; first request may be slow.
 - Local disk is ephemeral. Completed downloads can disappear on restart/redeploy and do not persist reliably.
 - Free services have resource limits; long videos and high resolutions may fail or time out.
-- YouTube may change its delivery behavior or block cloud-hosted IP ranges. A green Docker build alone does not prove live YouTube downloads work.
+- YouTube may change its delivery behavior or block cloud-hosted IP ranges. PO Token generation does not guarantee access from a blocked data-center IP. A green Docker build alone does not prove live YouTube downloads work.
 - Do not deploy this as an unauthenticated public service. `APP_SECRET` is required for protected API actions. Do not put cookies or account credentials in the service.
 
 ## Local Docker test
@@ -53,5 +53,5 @@ Dependabot or manual updates can bump the lower-bound in `requirements.txt`. Reb
 
 - This is a single-user MVP, not a hardened multi-tenant service. The token is shared by all users.
 - Use a unique `APP_SECRET`, HTTPS, and a host with suitable resource limits.
-- Do not expose account cookies, and do not accept arbitrary URLs.
+- Do not upload account cookies; this service is intentionally anonymous-only. Do not accept arbitrary URLs.
 - Download files are temporary; do not rely on the service for long-term storage.
