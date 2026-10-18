@@ -6,7 +6,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PORT=8080
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    ffmpeg ca-certificates curl \
+    ffmpeg ca-certificates curl nodejs \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
@@ -19,4 +19,4 @@ RUN mkdir -p /data/downloads && useradd -r -u 10001 appuser \
 USER appuser
 
 EXPOSE 8080
-CMD ["sh", "-c", "exec uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8080}"]
+CMD ["sh", "-c", "exec uvicorn app.main:app --host 0.0.0.0 --port \${PORT:-8080}"]
