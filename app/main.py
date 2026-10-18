@@ -85,8 +85,8 @@ def write_cookie_session(cookie_text: str) -> dict[str, Any]:
         raise HTTPException(413, "Cookie 文件过大，最大支持 512 KB。")
     if "\x00" in cookie_text:
         raise HTTPException(400, "Cookie 文件格式无效。")
-    lines = [line for line in cookie_text.splitlines() if line.strip() and not line.lstrip().startswith("#")]
-    if not any(len(fields := line.split("\t")) >= 7 and ("youtube.com" in fields[0].lower() or "google.com" in fields[0].lower()) for line in lines):
+    lines = [line for line in cookie_text.splitlines() if line.strip() and (not line.lstrip().startswith("#") or line.lstrip().startswith("#HttpOnly_"))]
+    if not any(len(fields := line.split("\t")) >= 7 and ("youtube.com" in fields[0].removeprefix("#HttpOnly_").lower() or "google.com" in fields[0].removeprefix("#HttpOnly_").lower()) for line in lines):
         raise HTTPException(400, "未识别到 YouTube/Google Netscape 格式 Cookie。请导出 cookies.txt，而不是复制浏览器地址栏或普通文本。")
     path = None
     try:
